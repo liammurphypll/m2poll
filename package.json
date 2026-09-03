@@ -1,0 +1,16 @@
+{
+  "name": "m2-top-25-poll",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The M2 Top 25 - a weekly college football ballot poll",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --experimental-sqlite server.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
