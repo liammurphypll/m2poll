@@ -125,6 +125,18 @@
   .pred-yesno { display: flex; gap: 20px; align-items: center; height: 41px; }
   .pred-yesno label { display: flex; align-items: center; gap: 6px; font-size: 15px; color: var(--ink); cursor: pointer; margin-bottom: 0; }
   .predictions-locked .lock-title { margin: 0 0 14px; }
+  .tally-section { margin-bottom: 30px; }
+  .tally-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+  .tally-card { background: var(--panel); border: 1.5px solid var(--line-strong); border-radius: 8px; padding: 12px 14px; }
+  .tally-card-title { font-family: var(--font-display); font-weight: 600; font-size: 13px; color: var(--muted); margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .tally-list { list-style: none; margin: 0; padding: 0; }
+  .tally-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .tally-name { flex: 1; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tally-count { font-family: var(--font-display); font-weight: 600; font-size: 13px; color: var(--gold); flex-shrink: 0; }
+  .tally-empty { color: var(--muted); font-size: 13px; }
+  .tally-yesno { display: flex; gap: 18px; font-size: 14px; }
+  .tally-yesno strong { color: var(--ink); font-family: var(--font-display); }
+  @media (max-width: 640px) { .tally-grid { grid-template-columns: 1fr; } }
   .admin-section { margin-bottom: 30px; }
   .admin-table td, .admin-table th { text-align: left; }
   .admin-delete-btn {
@@ -402,6 +414,15 @@
 
   <!-- Preseason Predictions view -->
   <section class="view" id="view-predictions">
+    <div class="tally-section" id="tally-section">
+      <div class="results-meta">
+        <span class="others-title" style="margin:0;">Live tally</span>
+        <span><strong id="tally-count">0</strong> submitted</span>
+      </div>
+      <div class="tally-grid" id="tally-grid"></div>
+    </div>
+
+    <p class="others-title">Your prediction</p>
     <div class="predictions-identity" id="predictions-identity"></div>
     <p class="hint-line" id="predictions-lock-note"></p>
 
@@ -758,6 +779,7 @@
     weekId: null,
     db: null,
     resultsUnsub: null,
+    predictionsUnsub: null,
     weekDocUnsub: null,
     lastBallots: [],
     lastUnlockAt: null,
@@ -1571,19 +1593,75 @@
     }).join("");
   }
 
-  function loadAllPredictionsForReveal() {
-    if (!state.db) { renderPredictionsReveal([]); return; }
-    state.db.collection("predictions").get().then(function (snap) {
-      renderPredictionsReveal(snap.docs.map(function (d) { return d.data(); }).filter(Boolean));
-    }).catch(function () { renderPredictionsReveal([]); });
+  function tallyField(entries, field) {
+    var counts = {};
+    entries.forEach(function (e) { if (e[field]) counts[e[field]] = (counts[e[field]] || 0) + 1; });
+    return Object.keys(counts).map(function (k) { return { team: k, count: counts[k] }; })
+      .sort(function (a, b) { return b.count - a.count || a.team.localeCompare(b.team); });
+  }
+
+  function tallyFinalFour(entries) {
+    var counts = {};
+    entries.forEach(function (e) {
+      (e.finalFour || []).forEach(function (t) { if (t) counts[t] = (counts[t] || 0) + 1; });
+    });
+    return Object.keys(counts).map(function (k) { return { team: k, count: counts[k] }; })
+      .sort(function (a, b) { return b.count - a.count || a.team.localeCompare(b.team); });
+  }
+
+  function buildTallyCard(title, list, limit) {
+    var html = '<div class="tally-card"><p class="tally-card-title">' + escapeHtml(title) + "</p>";
+    if (!list.length) {
+      html += '<p class="tally-empty">No picks yet</p>';
+    } else {
+      html += '<ul class="tally-list">' + list.slice(0, limit || 5).map(function (r) {
+        var t = findTeam(r.team);
+        return '<li class="tally-row">' + renderChip(t, "chip-sm") +
+          '<span class="tally-name">' + escapeHtml(r.team) + "</span>" +
+          '<span class="tally-count">' + r.count + "</span></li>";
+      }).join("") + "</ul>";
+    }
+    return html + "</div>";
+  }
+
+  function renderPredictionsTally(entries) {
+    document.getElementById("tally-count").textContent = entries.length;
+    var grid = document.getElementById("tally-grid");
+    if (!entries.length) {
+      grid.innerHTML = '<p class="tally-empty">No predictions submitted yet \u2014 be the first.</p>';
+      return;
+    }
+    var g5yes = entries.filter(function (e) { return e.g5Win === "yes"; }).length;
+    var g5no = entries.filter(function (e) { return e.g5Win === "no"; }).length;
+    var g5Card = '<div class="tally-card"><p class="tally-card-title">Does a G5 team win a CFP game?</p>' +
+      '<div class="tally-yesno"><span><strong>' + g5yes + '</strong> Yes</span><span><strong>' + g5no + '</strong> No</span></div></div>';
+    grid.innerHTML =
+      buildTallyCard("National Champion", tallyField(entries, "champion")) +
+      buildTallyCard("National Runner-Up", tallyField(entries, "runnerUp")) +
+      buildTallyCard("CFP Final Four", tallyFinalFour(entries), 8) +
+      buildTallyCard("No. 1 Overall Seed", tallyField(entries, "topSeed")) +
+      buildTallyCard("Most Overrated Team", tallyField(entries, "overrated")) +
+      buildTallyCard("Most Underrated Team", tallyField(entries, "underrated")) +
+      buildTallyCard("Riser (unranked \u2192 ranked)", tallyField(entries, "riser")) +
+      buildTallyCard("Faller (ranked \u2192 unranked)", tallyField(entries, "faller")) +
+      g5Card;
+  }
+
+  function subscribePredictionsTally() {
+    if (state.predictionsUnsub) { state.predictionsUnsub(); state.predictionsUnsub = null; }
+    if (!state.db) { renderPredictionsTally([]); return; }
+    state.predictionsUnsub = state.db.collection("predictions").onSnapshot(function (snap) {
+      var entries = snap.docs.map(function (d) { return d.data(); }).filter(Boolean);
+      renderPredictionsTally(entries);
+      if (predictionsLocked()) renderPredictionsReveal(entries);
+    }, function () { renderPredictionsTally([]); });
   }
 
   function enterPredictionsView() {
     renderPredictionsIdentity();
     renderPredictionsLockState();
-    if (predictionsLocked()) {
-      loadAllPredictionsForReveal();
-    } else {
+    subscribePredictionsTally();
+    if (!predictionsLocked()) {
       loadMyPrediction();
       updatePredictionsSubmitState();
     }
@@ -1614,6 +1692,7 @@
     state.db.doc("predictions/" + currentUser.id).set(data).then(function () {
       status.textContent = "Predictions saved. You can edit them until they lock.";
       status.className = "submit-status ok";
+      subscribePredictionsTally();
     }).catch(function () {
       status.textContent = "Couldn't save your predictions. Please try again.";
       status.className = "submit-status err";
