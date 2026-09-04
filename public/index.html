@@ -520,7 +520,7 @@
     </div>
   </section>
 
-  <p class="footer-note">Ballots are shared with everyone who opens this page. Creating a user with the same name reconnects to that same voting history. Results reveal Tuesday at 8:00 AM, once the first ballot for a week has come in.</p>
+  <p class="footer-note">Ballots are shared with everyone who opens this page. Creating a user with the same name reconnects to that same voting history. Preseason results are live as soon as ballots come in; each week after that reveals Tuesdays at 6:00 AM ET.</p>
 
 </div>
 
@@ -1173,21 +1173,53 @@
     submitBtn.disabled = !ready;
   }
 
-  function nextTuesday8am(from) {
-    var d = new Date(from.getTime());
-    var day = d.getDay();
-    var daysUntilTue = (2 - day + 7) % 7;
-    var candidate = new Date(d.getFullYear(), d.getMonth(), d.getDate() + daysUntilTue, 8, 0, 0, 0);
-    if (candidate.getTime() <= d.getTime()) candidate.setDate(candidate.getDate() + 7);
+  var UNLOCK_TZ = "America/New_York";
+  var UNLOCK_HOUR = 6; // 6:00 AM ET, every Tuesday
+
+  function tzOffsetMinutes(utcDate, timeZone) {
+    var dtf = new Intl.DateTimeFormat("en-US", {
+      timeZone: timeZone, hourCycle: "h23",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit"
+    });
+    var p = dtf.formatToParts(utcDate).reduce(function (acc, x) { acc[x.type] = x.value; return acc; }, {});
+    var asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+    return (asUTC - utcDate.getTime()) / 60000;
+  }
+
+  function nyCalendarParts(utcDate) {
+    var dtf = new Intl.DateTimeFormat("en-US", {
+      timeZone: UNLOCK_TZ, year: "numeric", month: "2-digit", day: "2-digit", weekday: "short"
+    });
+    var p = dtf.formatToParts(utcDate).reduce(function (acc, x) { acc[x.type] = x.value; return acc; }, {});
+    return { year: +p.year, month: +p.month, day: +p.day, weekday: p.weekday };
+  }
+
+  // The next Tuesday 6:00 AM America/New_York, as an absolute instant - the same
+  // moment for every viewer everywhere, regardless of whose browser triggers this
+  // or what timezone they're in (DST-safe via Intl, not a fixed UTC offset).
+  function nextTuesdayUnlock(fromUtc) {
+    var WD = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    var today = nyCalendarParts(fromUtc);
+    var daysUntilTue = (2 - WD[today.weekday] + 7) % 7;
+    function candidateFor(offsetDays) {
+      var guess = new Date(Date.UTC(today.year, today.month - 1, today.day + offsetDays, UNLOCK_HOUR, 0, 0));
+      var offset = tzOffsetMinutes(guess, UNLOCK_TZ);
+      return new Date(guess.getTime() - offset * 60000);
+    }
+    var candidate = candidateFor(daysUntilTue);
+    if (candidate.getTime() <= fromUtc.getTime()) candidate = candidateFor(daysUntilTue + 7);
     return candidate;
   }
 
   function ensureWeekUnlockRecord() {
     if (!state.db) return;
+    // Preseason has no prior week to wait on - it shows live as soon as ballots exist.
+    if (state.weekId === "preseason") return;
     var ref = state.db.doc("weeks/" + state.weekId);
     ref.get().then(function (snap) {
       if (snap.exists) return;
-      var unlockAt = nextTuesday8am(new Date()).toISOString();
+      var unlockAt = nextTuesdayUnlock(new Date()).toISOString();
       ref.set({ unlockAt: unlockAt }).catch(function () {});
     }).catch(function () {});
   }
@@ -1203,7 +1235,10 @@
       teams: state.slots.slice(0, 25),
       submittedAt: submittedAt
     }).then(function () {
-      submitStatus.textContent = "Ballot saved for " + currentWeekLabel(state.weekId) + ". Results stay locked until Tuesday 8 AM.";
+      var lockNote = state.weekId === "preseason"
+        ? " Results are live now."
+        : " Results stay locked until Tuesday 6 AM ET.";
+      submitStatus.textContent = "Ballot saved for " + currentWeekLabel(state.weekId) + "." + lockNote;
       submitStatus.className = "submit-status ok";
       loadedFor = currentUser.id + "|" + state.weekId;
       ensureWeekUnlockRecord();
@@ -1296,7 +1331,7 @@
     }
     empty.hidden = true;
 
-    var isLocked = !!(state.lastUnlockAt && new Date() < new Date(state.lastUnlockAt));
+    var isLocked = state.weekId !== "preseason" && !!(state.lastUnlockAt && new Date() < new Date(state.lastUnlockAt));
     if (isLocked) {
       lockPanel.hidden = false;
       document.getElementById("lock-week-name").textContent = currentWeekLabel(state.weekId);
