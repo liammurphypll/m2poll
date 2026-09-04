@@ -18,6 +18,33 @@ app.use(express.json({ limit: "2mb" }));
 // step required, unlike better-sqlite3) - needs Node 22.5+.
 const dataDir = process.env.DATA_DIR || path.join(__dirname, "data");
 fs.mkdirSync(dataDir, { recursive: true });
+
+// Snapshot the database before touching it, every time the server starts
+// (i.e. on every deploy). A code change should never cost existing
+// submissions - this is the safety net in case one ever does.
+function backupDatabaseOnBoot() {
+  const dbFile = path.join(dataDir, "poll.db");
+  if (!fs.existsSync(dbFile)) return;
+  const backupDir = path.join(dataDir, "backups");
+  fs.mkdirSync(backupDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  ["poll.db", "poll.db-wal", "poll.db-shm"].forEach((name) => {
+    const src = path.join(dataDir, name);
+    if (fs.existsSync(src)) fs.copyFileSync(src, path.join(backupDir, `${stamp}_${name}`));
+  });
+  // Keep the most recent 30 backups (~a month of daily deploys) so this
+  // doesn't grow the disk unbounded.
+  const files = fs.readdirSync(backupDir).filter((f) => f.endsWith("poll.db")).sort();
+  while (files.length > 30) {
+    const stampPrefix = files.shift().replace(/poll\.db$/, "");
+    ["poll.db", "poll.db-wal", "poll.db-shm"].forEach((name) => {
+      const f = path.join(backupDir, stampPrefix + name);
+      if (fs.existsSync(f)) fs.unlinkSync(f);
+    });
+  }
+}
+backupDatabaseOnBoot();
+
 const db = new DatabaseSync(path.join(dataDir, "poll.db"));
 db.exec("PRAGMA journal_mode = WAL");
 db.exec(`
