@@ -18,6 +18,13 @@ app.use(express.json({ limit: "2mb" }));
 // step required, unlike better-sqlite3) - needs Node 22.5+.
 const dataDir = process.env.DATA_DIR || path.join(__dirname, "data");
 fs.mkdirSync(dataDir, { recursive: true });
+console.log(`DATA_DIR env: ${process.env.DATA_DIR || "<not set>"}  |  resolved data dir: ${dataDir}`);
+console.log(`Database file ${fs.existsSync(path.join(dataDir, "poll.db")) ? "already exists" : "does NOT exist yet"} at ${path.join(dataDir, "poll.db")}`);
+try {
+  console.log("Contents of data dir:", fs.readdirSync(dataDir));
+} catch (e) {
+  console.log("Could not list data dir:", e.message);
+}
 
 // Snapshot the database before touching it, every time the server starts
 // (i.e. on every deploy). A code change should never cost existing
