@@ -92,6 +92,13 @@
   .voter-identity { font-size: 14px; color: var(--muted); margin-bottom: 14px; }
   .voter-identity strong { color: var(--ink); }
   .link-btn { background: none; border: none; padding: 0; margin-left: 4px; color: var(--gold); font-size: 13px; font-family: inherit; text-decoration: underline; cursor: pointer; }
+  .pill-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--gold-bg); color: var(--gold); border: 1.5px solid var(--gold);
+    border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600;
+    font-family: var(--font-display); cursor: pointer;
+  }
+  .pill-btn:hover { background: var(--gold); color: #fff; }
 
   .predictions-identity { font-size: 14px; color: var(--muted); margin-bottom: 6px; }
   .predictions-identity strong { color: var(--ink); }
@@ -271,6 +278,11 @@
   }
   .results-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
   .results-row .rank { font-family: var(--font-display); font-weight: 700; font-size: 22px; width: 32px; flex-shrink: 0; text-align: right; }
+  .results-row .movement { font-family: var(--font-display); font-weight: 700; font-size: 12px; width: 30px; flex-shrink: 0; text-align: center; display: flex; align-items: center; justify-content: center; gap: 1px; }
+  .move-up { color: #1a8a3c; }
+  .move-down { color: var(--gold); }
+  .move-none { color: #d97706; }
+  .move-new { color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: 0.02em; }
   .results-row .team-info { flex: 1; min-width: 0; }
   .results-row .team-name { font-size: 16.5px; font-weight: 600; }
   .results-row .team-sub { font-size: 12.5px; color: var(--muted); margin-top: 1px; }
@@ -783,6 +795,7 @@
     lastBallots: [],
     lastUnlockAt: null,
     prevRanks: {}, // teamNameLower -> rank (1-25) from the previous week's poll
+    hasPrevWeek: false, // whether a previous period actually exists to compare against
     armed: null, // {type:'sidebar', team} | {type:'tile', index}
     activeView: "ballot"
   };
@@ -967,12 +980,11 @@
         if (state.slots.some(Boolean) || key !== loadedFor) return;
         var note = document.getElementById("load-note");
         note.innerHTML = "";
-        var span = document.createElement("span");
-        span.textContent = "Start from your " + currentWeekLabel(prevId) + " ballot? ";
         var btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "link-btn";
-        btn.textContent = "Copy it forward";
+        btn.className = "pill-btn";
+        btn.textContent = "Copy from previous week";
+        btn.title = "Copy your " + currentWeekLabel(prevId) + " ballot";
         btn.addEventListener("click", function () {
           var slots = new Array(25).fill(null);
           data.teams.slice(0, 25).forEach(function (t, i) { slots[i] = t; });
@@ -980,7 +992,6 @@
           renderSidebar(); renderGrid();
           note.textContent = "Copied from " + currentWeekLabel(prevId) + " — adjust and save.";
         });
-        note.appendChild(span);
         note.appendChild(btn);
       }).catch(function () {});
   }
@@ -1312,6 +1323,7 @@
 
   function loadPrevWeekRanks() {
     var prevId = prevWeekId(state.weekId);
+    state.hasPrevWeek = !!prevId;
     if (!prevId) { state.prevRanks = {}; renderSidebar(); renderResults(); return; }
     if (prevId === "preseason") {
       state.prevRanks = PRESEASON_RANKS;
@@ -1384,15 +1396,24 @@
     var top25 = ranked.slice(0, 25);
     var others = ranked.slice(25);
 
+    function buildMovement(prevRank, rank) {
+      if (!prevRank) return '<span class="movement move-new">NEW</span>';
+      var diff = prevRank - rank;
+      if (diff > 0) return '<span class="movement move-up">\u25B2' + diff + "</span>";
+      if (diff < 0) return '<span class="movement move-down">\u25BC' + (-diff) + "</span>";
+      return '<span class="movement move-none">\u2014</span>';
+    }
+
     function buildRow(r, rank) {
       var t = findTeam(r.team);
       var prevRank = state.prevRanks[r.team.toLowerCase()];
       return '<li class="results-row">' +
         '<span class="rank">' + rank + "</span>" +
+        (state.hasPrevWeek ? buildMovement(prevRank, rank) : "") +
         renderChip(t) +
         '<span class="team-info"><span class="team-name">' + escapeHtml(r.team) +
           (r.fpv ? '<span class="fpv-badge">' + r.fpv + "</span>" : "") + "</span>" +
-          '<span class="team-sub">' + r.appearances + (r.appearances === 1 ? " ballot" : " ballots") + (prevRank ? " \u00b7 Prev #" + prevRank : "") + "</span></span>" +
+          (prevRank ? '<span class="team-sub">Prev #' + prevRank + "</span>" : "") + "</span>" +
         '<span class="points">' + r.points + '<span class="points-label">pts</span></span>' +
       "</li>";
     }
