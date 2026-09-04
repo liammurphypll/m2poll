@@ -820,6 +820,10 @@
     try { localStorage.setItem("saturdayBallot.week", state.weekId); } catch (e) {}
     document.getElementById("load-note").textContent = "";
     loadedFor = null;
+    state.armed = null;
+    state.slots = new Array(25).fill(null);
+    renderSidebar();
+    renderGrid();
     subscribeResults();
     loadPrevWeekRanks();
     tryLoadExistingBallot();
@@ -932,9 +936,10 @@
     if (key === loadedFor) return;
     loadedFor = key;
     if (state.slots.some(Boolean)) return;
+    document.getElementById("load-note").textContent = "";
     state.db.doc("weeks/" + state.weekId + "/ballots/" + currentUser.id).get()
       .then(function (snap) {
-        if (!snap.exists) return;
+        if (!snap.exists) { offerCopyFromPrevWeek(key); return; }
         var data = snap.data();
         if (data && Array.isArray(data.teams) && data.teams.length) {
           var slots = new Array(25).fill(null);
@@ -944,6 +949,39 @@
           document.getElementById("load-note").textContent =
             "Loaded your existing " + currentWeekLabel(state.weekId) + " ballot — edit and save to update it.";
         }
+      }).catch(function () {});
+  }
+
+  // Offers to copy the user's previous week's ballot forward as a starting point,
+  // since most weeks are a handful of shuffles rather than 25 fresh picks.
+  function offerCopyFromPrevWeek(key) {
+    var prevId = prevWeekId(state.weekId);
+    if (!prevId || !state.db || !currentUser) return;
+    state.db.doc("weeks/" + prevId + "/ballots/" + currentUser.id).get()
+      .then(function (snap) {
+        if (!snap.exists) return;
+        var data = snap.data();
+        if (!data || !Array.isArray(data.teams) || !data.teams.length) return;
+        // Bail if things moved on while this was loading (week switched again,
+        // or the ballot got filled some other way in the meantime).
+        if (state.slots.some(Boolean) || key !== loadedFor) return;
+        var note = document.getElementById("load-note");
+        note.innerHTML = "";
+        var span = document.createElement("span");
+        span.textContent = "Start from your " + currentWeekLabel(prevId) + " ballot? ";
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "link-btn";
+        btn.textContent = "Copy it forward";
+        btn.addEventListener("click", function () {
+          var slots = new Array(25).fill(null);
+          data.teams.slice(0, 25).forEach(function (t, i) { slots[i] = t; });
+          state.slots = slots;
+          renderSidebar(); renderGrid();
+          note.textContent = "Copied from " + currentWeekLabel(prevId) + " — adjust and save.";
+        });
+        note.appendChild(span);
+        note.appendChild(btn);
       }).catch(function () {});
   }
 
