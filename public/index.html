@@ -74,6 +74,7 @@
   .tab-btn.active { color: var(--ink); border-bottom-color: var(--gold); }
 
   .panel-hint { display: none; padding: 10px 14px; background: var(--brick-bg); color: var(--brick); border-radius: 4px; font-size: 14px; margin-bottom: 16px; }
+  .week-locked-note { display: none; padding: 10px 14px; background: var(--brick-bg); color: var(--brick); border-radius: 4px; font-size: 14px; margin-bottom: 16px; font-weight: 500; }
 
   section.view { display: none; }
   section.view.active { display: block; }
@@ -364,6 +365,7 @@
       Voting as <strong id="voter-identity-name"></strong> &middot; <button type="button" id="switch-user-btn" class="link-btn">Not you?</button>
     </div>
     <div class="load-note" id="load-note"></div>
+    <div class="week-locked-note" id="week-locked-note"></div>
 
     <div class="progress-line">
       <span><strong id="picked-count">0</strong> of 25 teams ranked</span>
@@ -1216,9 +1218,24 @@
   var submitBtn = document.getElementById("submit-btn");
   var submitStatus = document.getElementById("submit-status");
 
+  function isBallotWeekLocked() {
+    return state.weekId !== "preseason" && !!state.lastUnlockAt && new Date() >= new Date(state.lastUnlockAt);
+  }
+
+  function renderWeekLockBanner() {
+    var el = document.getElementById("week-locked-note");
+    if (isBallotWeekLocked()) {
+      el.textContent = currentWeekLabel(state.weekId) + " is locked \u2014 results are already live, so ballots can no longer be changed.";
+      el.style.display = "block";
+    } else {
+      el.style.display = "none";
+    }
+  }
+
   function updateSubmitState() {
+    renderWeekLockBanner();
     var filled = state.slots.filter(Boolean);
-    var ready = filled.length === 25 && !!currentUser && !!state.db;
+    var ready = filled.length === 25 && !!currentUser && !!state.db && !isBallotWeekLocked();
     submitBtn.disabled = !ready;
   }
 
@@ -1274,7 +1291,7 @@
   }
 
   submitBtn.addEventListener("click", function () {
-    if (!state.db || state.slots.filter(Boolean).length !== 25 || !currentUser) return;
+    if (!state.db || state.slots.filter(Boolean).length !== 25 || !currentUser || isBallotWeekLocked()) return;
     submitBtn.disabled = true;
     submitStatus.textContent = "Saving\u2026";
     submitStatus.className = "submit-status";
@@ -1356,6 +1373,7 @@
     state.weekDocUnsub = state.db.doc("weeks/" + state.weekId).onSnapshot(function (snap) {
       state.lastUnlockAt = (snap.exists && snap.data().unlockAt) ? snap.data().unlockAt : null;
       renderResults();
+      updateSubmitState();
     }, function () { state.lastUnlockAt = null; renderResults(); });
   }
 
