@@ -124,7 +124,6 @@
   .picker-empty { padding: 14px 10px; color: var(--muted); font-size: 13.5px; }
   .pred-yesno { display: flex; gap: 20px; align-items: center; height: 41px; }
   .pred-yesno label { display: flex; align-items: center; gap: 6px; font-size: 15px; color: var(--ink); cursor: pointer; margin-bottom: 0; }
-  .predictions-locked .lock-title { margin: 0 0 14px; }
   .tally-section { margin-bottom: 30px; }
   .tally-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
   .tally-card { background: var(--panel); border: 1.5px solid var(--line-strong); border-radius: 8px; padding: 12px 14px; }
@@ -477,7 +476,7 @@
     <div class="submit-status" id="predictions-submit-status"></div>
 
     <div class="predictions-locked" id="predictions-locked" hidden>
-      <p class="lock-title">Predictions are locked</p>
+      <p class="others-title">All predictions</p>
       <div class="ballots-grid-scroll">
         <table class="ballots-grid predictions-reveal-table">
           <thead>
@@ -1556,25 +1555,24 @@
     var note = document.getElementById("predictions-lock-note");
     var form = document.getElementById("predictions-form");
     var btn = document.getElementById("predictions-submit-btn");
-    var lockedBlock = document.getElementById("predictions-locked");
     var lockDateStr = formatUnlockTime(PREDICTIONS_LOCK_AT);
     if (predictionsLocked()) {
       note.textContent = "Predictions locked " + lockDateStr + ".";
       form.hidden = true; btn.hidden = true;
-      lockedBlock.hidden = false;
     } else {
       note.textContent = "Locks " + lockDateStr + " \u2014 edit anytime before then.";
       form.hidden = false; btn.hidden = false;
-      lockedBlock.hidden = true;
     }
   }
 
   function renderPredictionsReveal(entries) {
+    var wrap = document.getElementById("predictions-locked");
     var body = document.getElementById("predictions-reveal-body");
     if (!entries.length) {
-      body.innerHTML = '<tr><td colspan="9" style="text-align:center; color:var(--muted); padding:20px;">No predictions were submitted.</td></tr>';
+      wrap.hidden = true;
       return;
     }
+    wrap.hidden = false;
     var sorted = entries.slice().sort(function (a, b) { return (a.voter || "").localeCompare(b.voter || ""); });
     body.innerHTML = sorted.map(function (e) {
       var ff = (e.finalFour || []).filter(Boolean).join(", ");
@@ -1653,8 +1651,8 @@
     state.predictionsUnsub = state.db.collection("predictions").onSnapshot(function (snap) {
       var entries = snap.docs.map(function (d) { return d.data(); }).filter(Boolean);
       renderPredictionsTally(entries);
-      if (predictionsLocked()) renderPredictionsReveal(entries);
-    }, function () { renderPredictionsTally([]); });
+      renderPredictionsReveal(entries);
+    }, function () { renderPredictionsTally([]); renderPredictionsReveal([]); });
   }
 
   function enterPredictionsView() {
